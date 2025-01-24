@@ -1,3 +1,8 @@
+/**
+ * 配列内のペアの要素を入れ替えた新しい配列を返します。
+ * @param {Array} swapPairs - 入れ替えるペアの配列
+ * @returns {Array} 要素が入れ替えられた新しい配列
+ */
 function swap(swapPairs) {
     if(!Array.isArray(swapPairs)) {
         console.log([]);
@@ -555,7 +560,13 @@ function socialNetworkingService() {
             case 'CREATE_ACCOUNT': {
                 const existingAccount = accounts.find(acc => acc.id === payload.id);
                 if (existingAccount) return false;
-                accounts.push({ id: payload.id, name: payload.name, emailAddress: payload.emailAddress, posts: [] });
+                accounts.push({
+                    id: payload.id,
+                    name: payload.name,
+                    emailAddress: payload.emailAddress,
+                    posts: [],
+                    likes: []
+                });
                 return true;
             }
             case 'GET_ACCOUNT': {
@@ -566,29 +577,101 @@ function socialNetworkingService() {
                 const account = accounts.find(acc => acc.id === payload.accountId);
                 if (!account) return false;
                 if (payload.body.length > 140) return false;
-                const post = { id: payload.id, accountId: payload.accountId, body: payload.body };
+                const post = {
+                    id: payload.id,
+                    accountId: payload.accountId,
+                    body: payload.body
+                };
                 posts.push(post);
-                account.posts.push(post);
                 likes[payload.id] = [];
                 return true;
             }
             case 'GET_POSTS': {
                 const account = accounts.find(acc => acc.id === payload.id);
                 if (!account) return false;
-                return account.posts.map(post => ({ id: post.id, body: post.body }));
+                return posts
+                    .filter(post => post.accountId === payload.id)
+                    .map(post => ({
+                        id: post.id,
+                        body: post.body
+                    }));
             }
             case 'ADD_LIKE': {
                 const post = posts.find(post => post.id === payload.id);
                 if (!post) return false;
-                if (!likes[post.id].includes(payload.accountId)) {
-                    likes[post.id].push(payload.accountId);
+                likes[post.id].push(payload.accountId);
+                return true;
+            }
+            case 'GET_LIKES': {
+                const account = accounts.find(acc => acc.id === payload.id);
+                if (!account) return false;
+                const likedPosts = [];
+                Object.entries(likes).forEach(([postId, likers]) => {
+                    if (likers.includes(payload.id)) {
+                        const post = posts.find(p => p.id === Number(postId));
+                        if (post) {
+                            likedPosts.push({
+                                id: post.id,
+                                body: post.body
+                            });
+                        }
+                    }
+                });
+                return likedPosts;
+            }
+            case 'DELETE_LIKES': {
+                const post = posts.find(post => post.id === payload.id);
+                if (!post) return false;
+                likes[post.id] = likes[post.id].filter(id => id !== payload.accountId);
+                return true;
+            }
+            case 'GET_LIKES_COUNT': {
+                const account = accounts.find(acc => acc.id === payload.id);
+                if (!account) return false;
+                let count = 0;
+                Object.values(likes).forEach(likers => {
+                    if (likers.includes(payload.id)) {
+                        count++;
+                    }
+                });
+                return count;
+            }
+            case 'SEARCH_POSTS': {
+                if (payload.id) {
+                    const account = accounts.find(acc => acc.id === payload.id);
+                    if (!account) return false;
                 }
+                const searchResults = posts.filter(post => {
+                    if (payload.id && post.accountId !== payload.id) {
+                        return false;
+                    }
+                    return post.body.toLowerCase().includes(payload.query.toLowerCase());
+                });
+                return searchResults.map(post => ({
+                    id: post.id,
+                    body: post.body
+                }));
+            }
+            case 'DELETE_POST': {
+                const postIndex = posts.findIndex(post => post.id === payload.id);
+                if (postIndex === -1) return false;
+                posts.splice(postIndex, 1);
+                delete likes[payload.id];
                 return true;
             }
             case 'DELETE_ACCOUNT': {
                 const accountIndex = accounts.findIndex(acc => acc.id === payload.id);
                 if (accountIndex === -1) return false;
                 accounts.splice(accountIndex, 1);
+                const accountPosts = posts.filter(post => post.accountId === payload.id);
+                accountPosts.forEach(post => {
+                    delete likes[post.id];
+                });
+                const postIndexes = posts
+                    .map((post, index) => post.accountId === payload.id ? index : -1)
+                    .filter(index => index !== -1)
+                    .reverse();
+                postIndexes.forEach(index => posts.splice(index, 1));
                 return true;
             }
             default: {
@@ -601,17 +684,21 @@ function socialNetworkingService() {
 const sns = socialNetworkingService();
 
 // --------------------------------------------------
-
+console.log('1----------------------------------------------------------');
 const tmcAccount =  { id: 1, name: 'TMC', emailAddress: 'tmc@fake-email.com' };
 const digAccount =  { id: 2, name: 'DIG', emailAddress: 'dig@fake-email.com' };
 
-sns('CREATE_ACCOUNT', tmcAccount); // true
-sns('CREATE_ACCOUNT', digAccount); // true
-sns('CREATE_ACCOUNT', tmcAccount); // false（同じアカウントは存在できない）
+console.log(sns('CREATE_ACCOUNT', tmcAccount));
+// sns('CREATE_ACCOUNT', tmcAccount); // true
+console.log(sns('CREATE_ACCOUNT', digAccount));
+// sns('CREATE_ACCOUNT', digAccount); // true
+console.log(sns('CREATE_ACCOUNT', tmcAccount));
+// sns('CREATE_ACCOUNT', tmcAccount); // false（同じアカウントは存在できない）
 
 // --------------------------------------------------
-
-sns('GET_ACCOUNT', { id: tmcAccount.id });
+console.log('2----------------------------------------------------------');
+console.log(sns('GET_ACCOUNT', { id: tmcAccount.id }));
+// sns('GET_ACCOUNT', { id: tmcAccount.id });
 // {
 //   id: 1,
 //   name: 'TMC',
@@ -619,7 +706,8 @@ sns('GET_ACCOUNT', { id: tmcAccount.id });
 //   posts: [],
 //   likes: [],
 // }
-sns('GET_ACCOUNT', { id: digAccount.id });
+console.log(sns('GET_ACCOUNT', { id: digAccount.id }));
+// sns('GET_ACCOUNT', { id: digAccount.id });
 // {
 //   id: 2,
 //   name: 'DIG',
@@ -627,10 +715,11 @@ sns('GET_ACCOUNT', { id: digAccount.id });
 //   posts: [],
 //   likes: [],
 // }
-sns('GET_ACCOUNT', { id: 1000 }); // false（アカウントが存在しない）
+console.log(sns('GET_ACCOUNT', { id: 1000 }));
+// sns('GET_ACCOUNT', { id: 1000 }); // false（アカウントが存在しない）
 
 // --------------------------------------------------
-
+console.log('3----------------------------------------------------------');
 const post1 = {
   id: 1,
   accountId: 1,
@@ -647,13 +736,17 @@ const post3 = {
   body: 'I am studying HTML, CSS and JavaScript. I want to built a web application in the near future. I am looking forward to learning more about server-side, database and other technologies. I am excited to learn more about the web development.',
 };
 
-sns('CREATE_POST', post1); // true
-sns('CREATE_POST', post2); // true
-sns('CREATE_POST', post3); // false（140文字以下のみ投稿可能）
+console.log(sns('CREATE_POST', post1));
+// sns('CREATE_POST', post1); // true
+console.log(sns('CREATE_POST', post2));
+// sns('CREATE_POST', post2); // true
+console.log(sns('CREATE_POST', post3));
+// sns('CREATE_POST', post3); // false（140文字以下のみ投稿可能）
 
 // --------------------------------------------------
-
-sns('GET_POSTS', { id: tmcAccount.id });
+console.log('4----------------------------------------------------------');
+console.log(sns('GET_POSTS', { id: tmcAccount.id }));
+// sns('GET_POSTS', { id: tmcAccount.id });
 // [
 //   {
 //     id: 1,
@@ -664,33 +757,42 @@ sns('GET_POSTS', { id: tmcAccount.id });
 //     body: 'I will pass this test',
 //   }
 // ]
-sns('GET_POSTS', { id: digAccount.id }); // []
-sns('GET_POSTS', { id: 1000 });          // false（アカウントが存在しない）
+console.log(sns('GET_POSTS', { id: digAccount.id }));
+// sns('GET_POSTS', { id: digAccount.id }); // []
+console.log(sns('GET_POSTS', { id: 1000 }));
+// sns('GET_POSTS', { id: 1000 });          // false（アカウントが存在しない）
 
 // --------------------------------------------------
-
-sns('ADD_LIKE', { id: post1.id, accountId: digAccount.id }); // true
-sns('ADD_LIKE', { id: post2.id, accountId: digAccount.id }); // true
+console.log('5----------------------------------------------------------');
+console.log(sns('ADD_LIKE', { id: post1.id, accountId: digAccount.id }));
+// sns('ADD_LIKE', { id: post1.id, accountId: digAccount.id }); // true
+console.log(sns('ADD_LIKE', { id: post2.id, accountId: digAccount.id }));
+// sns('ADD_LIKE', { id: post2.id, accountId: digAccount.id }); // true
 
 // --------------------------------------------------
-
-sns('GET_LIKES', { id: tmcAccount.id }); // []
-sns('GET_LIKES', { id: digAccount.id });
+console.log('6----------------------------------------------------------');
+console.log(sns('GET_LIKES', { id: tmcAccount.id }));
+// sns('GET_LIKES', { id: tmcAccount.id }); // []
+console.log(sns('GET_LIKES', { id: digAccount.id }));
+// sns('GET_LIKES', { id: digAccount.id });
 // [
-//   {
-//     id: 1,
-//     body: 'I want to join this bootcamp',
-//   },
-//   {
-//     id: 2,
-//     body: 'I will pass this test',
-//   }
-// ]
-sns('GET_LIKES', { id: 1000 }); // false（アカウントが存在しない）
+    //   {
+        //     id: 1,
+        //     body: 'I want to join this bootcamp',
+        //   },
+        //   {
+            //     id: 2,
+            //     body: 'I will pass this test',
+            //   }
+            // ]
+console.log(sns('GET_LIKES', { id: 1000 }));
+// sns('GET_LIKES', { id: 1000 }); // false（アカウントが存在しない）
 
 // --------------------------------------------------
-
+console.log('7----------------------------------------------------------');
+console.log(sns('DELETE_LIKES', { id: post2.id, accountId: digAccount.id }));
 sns('DELETE_LIKES', { id: post2.id, accountId: digAccount.id }); // true
+console.log(sns('GET_LIKES', { id: digAccount.id }));
 sns('GET_LIKES', { id: digAccount.id });
 // [
 //   {
@@ -700,12 +802,15 @@ sns('GET_LIKES', { id: digAccount.id });
 // ]
 
 // --------------------------------------------------
-
-sns('GET_LIKES_COUNT', { id: tmcAccount.id }); // 0
-sns('GET_LIKES_COUNT', { id: digAccount.id }); // 1
+console.log('8----------------------------------------------------------');
+console.log(sns('GET_LIKES_COUNT', { id: tmcAccount.id }));
+// sns('GET_LIKES_COUNT', { id: tmcAccount.id }); // 0
+console.log(sns('GET_LIKES_COUNT', { id: digAccount.id }));
+// sns('GET_LIKES_COUNT', { id: digAccount.id }); // 1
 
 // --------------------------------------------------
-
+console.log('9----------------------------------------------------------');
+console.log(sns('SEARCH_POSTS', { id: tmcAccount.id, query: 'I want to' }));
 sns('SEARCH_POSTS', { id: tmcAccount.id, query: 'I want to' });
 // [
 //   {
@@ -713,24 +818,31 @@ sns('SEARCH_POSTS', { id: tmcAccount.id, query: 'I want to' });
 //     body: 'I want to join this bootcamp',
 //   }
 // ]
-sns('SEARCH_POSTS', { id: 1000, query: 'This was not found' }); // false（アカウントまたは投稿が存在しない）
+console.log(sns('SEARCH_POSTS', { id: 1000, query: 'This was not found' }));
+// sns('SEARCH_POSTS', { id: 1000, query: 'This was not found' }); // false（アカウントまたは投稿が存在しない）
 
 // --------------------------------------------------
-
-sns('DELETE_POST', { id: post2.id, accountId: tmcAccount.id }); // true
-sns('GET_POSTS', { id: tmcAccount.id });
+console.log('10----------------------------------------------------------');
+console.log(sns('DELETE_POST', { id: post2.id, accountId: tmcAccount.id }));
+// sns('DELETE_POST', { id: post2.id, accountId: tmcAccount.id }); // true
+console.log(sns('GET_POSTS', { id: tmcAccount.id }));
+// sns('GET_POSTS', { id: tmcAccount.id });
 // [
 //   {
 //     id: 1,
 //     body: 'I want to join this bootcamp',
 //   }
 // ]
-sns('DELETE_POST', { id: 1000, accountId: 2000 }); // false（アカウントまたは投稿が存在しない）
+console.log(sns('DELETE_POST', { id: 1000, accountId: 2000 }));
+// sns('DELETE_POST', { id: 1000, accountId: 2000 }); // false（アカウントまたは投稿が存在しない）
 
 // --------------------------------------------------
-
-sns('DELETE_ACCOUNT', { id: tmcAccount.id }); // true
-sns('DELETE_ACCOUNT', { id: 1000 });          // false（アカウントが存在しない
+console.log('11----------------------------------------------------------');
+console.log(sns('DELETE_ACCOUNT', { id: tmcAccount.id }));
+// sns('DELETE_ACCOUNT', { id: tmcAccount.id }); // true
+console.log(sns('DELETE_ACCOUNT', { id: 1000 }));
+// sns('DELETE_ACCOUNT', { id: 1000 });          // false（アカウントが存在しない
+console.log('終----------------------------------------------------------');
 
 function flat(array, depth = Infinity) {
     const result = [];
